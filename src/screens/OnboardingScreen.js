@@ -28,7 +28,7 @@ export default function OnboardingScreen({ navigation }) {
     ]).start();
   }, []);
 
- const handleAllowAccess = async () => {
+const handleAllowAccess = async () => {
     try {
       // 1. Camera Permission
       const cameraStatus = await Camera.requestCameraPermissionsAsync();
@@ -36,25 +36,25 @@ export default function OnboardingScreen({ navigation }) {
       // 2. Storage / Media Library Permission
       const mediaLibraryStatus = await MediaLibrary.requestPermissionsAsync();
 
-      // Console mein check karne ke liye ke kiski permission mili hai aur kiski nahi
+      // Check in console which permissions were granted and which weren't
       console.log("Camera Permission Status:", cameraStatus.status);
       console.log("Storage/MediaLibrary Status:", mediaLibraryStatus.status);
 
-      // Alag-alag conditions check karein taake clear pata chale
+      // Check different conditions for clarity
       if (cameraStatus.status === 'granted' && mediaLibraryStatus.status === 'granted') {
-        console.log("Dono permissions mil gayi hain! (Camera + Storage)");
+        console.log("Both permissions granted! (Camera + Storage)");
         navigation.replace('Scanner');
       } 
       else if (cameraStatus.status === 'granted' && mediaLibraryStatus.status !== 'granted') {
         Alert.alert(
           "Storage Permission Missing",
-          "Camera ki permission mil gayi hai, lekin 3D models save karne ke liye Storage (Media Library) ki permission zaroori hai."
+          "Camera permission is granted, but Storage (Media Library) permission is required to save 3D models."
         );
       } 
       else {
         Alert.alert(
           "Permissions Denied",
-          "App ko chalane ke liye zaroori permissions deni hongi."
+          "You must grant the necessary permissions to use the app."
         );
       }
 
