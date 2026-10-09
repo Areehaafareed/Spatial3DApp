@@ -1,71 +1,128 @@
-import React from 'react';
-import { StyleSheet, Text, View, SafeAreaView, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { WebView } from 'react-native-webview';
+import React, { useEffect, useRef, useState } from "react";
+import { View, ActivityIndicator, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import { WebView } from "react-native-webview";
+import * as FileSystem from "expo-file-system/legacy";
+
+const HTML = `
+<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+<style>html,body{margin:0;height:100%;background:#111}model-viewer{width:100%;height:100%}</style>
+</head><body>
+<model-viewer id="mv" camera-controls auto-rotate shadow-intensity="1"></model-viewer>
+<script>
+function send(type, msg){ window.ReactNativeWebView.postMessage(JSON.stringify({type:type,msg:String(msg)})); }
+var mv = document.getElementById("mv");
+mv.addEventListener("load", function(){ send("log","MODEL LOADED OK"); });
+mv.addEventListener("error", function(e){ send("error","model-viewer error: "+JSON.stringify(e.detail||{})); });
+function loadGlb(b64){
+  try {
+    var bin = atob(b64), n = bin.length, bytes = new Uint8Array(n);
+    for (var i = 0; i < n; i++) bytes[i] = bin.charCodeAt(i);
+    var blob = new Blob([bytes], { type: "model/gltf-binary" });
+    mv.setAttribute("src", URL.createObjectURL(blob));
+    send("log","src set, bytes="+n);
+  } catch(e){ send("error","loadGlb failed: "+e.message); }
+}
+window.onerror = function(m){ send("error","JS error: "+m); };
+</script>
+</body></html>`;
 
 export default function ModelViewerScreen({ route, navigation }) {
-    const { modelGlbUrl } = route.params || {};
+  const { localUri } = route.params || {};
+  const webRef = useRef(null);
+  const injected = useRef(false);
+  const [b64, setB64] = useState(null);
+  const [error, setError] = useState(null);
 
-    // HTML template jo 3D .glb file ko browser/webview mein 3D rotateable model ke taur par dikhaye
-    const viewerHtml = `
-      <!DOCTYPE html>
-      <html>
-        head>
-          <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
-          <style>
-            body { margin: 0; background-color: #f4f7fb; display: flex; justify-content: center; align-items: center; height: 100vh; }
-            model-viewer { width: 100%; height: 100%; }
-          </style>
-        </head>
-        <body>
-          <model-viewer src="${modelGlbUrl}" alt="3D Scan" auto-rotate camera-controls></model-viewer>
-        </body>
-      </html>
-    `;
+  const handleBack = () => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.replace("Onboarding");
+  };
 
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!localUri) throw new Error("localUri param nahi mila (navigation params check karo).");
+        const info = await FileSystem.getInfoAsync(localUri);
+        console.log("[Viewer] exists:", info.exists, "size KB:", Math.round((info.size || 0) / 1024));
+        if (!info.exists) throw new Error("GLB file local storage mein nahi mili.");
+        const data = await FileSystem.readAsStringAsync(localUri, { encoding: "base64" });
+        setB64(data);
+      } catch (e) {
+        console.error("[Viewer] error", e);
+        setError(e.message);
+      }
+    })();
+  }, [localUri]);
+
+  // Back button har state (error / loading / viewer) mein dikhega
+  const BackButton = (
+    <SafeAreaView style={styles.backWrapper} edges={["top"]} pointerEvents="box-none">
+      <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+        <Ionicons name="arrow-back" size={22} color="#111" />
+      </TouchableOpacity>
+    </SafeAreaView>
+  );
+
+  if (error) {
     return (
-        <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                    <Ionicons name="arrow-back" size={24} color="#111" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Your 3D Model (.glb)</Text>
-            </View>
-
-            <View style={styles.viewerContainer}>
-                {modelGlbUrl ? (
-                    <WebView 
-                        originWhitelist={['*']}
-                        source={{ html: viewerHtml }} 
-                        style={styles.webview} 
-                    />
-                ) : (
-                    <View style={styles.center}>
-                        <ActivityIndicator size="large" color="#00A3FF" />
-                        <Text style={styles.loadingText}>Generating 3D Model from AI...</Text>
-                    </View>
-                )}
-            </View>
-
-            <View style={styles.footer}>
-                <TouchableOpacity style={styles.exportButton} onPress={() => alert("Model ready to download!")}>
-                    <Text style={styles.exportButtonText}>Download .GLB File</Text>
-                </TouchableOpacity>
-            </View>
-        </SafeAreaView>
+      <View style={styles.container}>
+        <Text style={styles.errorText}>{error}</Text>
+        {BackButton}
+      </View>
     );
+  }
+
+  if (!b64) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color="#00A3FF" />
+        {BackButton}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <WebView
+        ref={webRef}
+        originWhitelist={["*"]}
+        source={{ html: HTML }}
+        javaScriptEnabled
+        style={styles.webview}
+        onLoadEnd={() => {
+          if (injected.current) return;
+          injected.current = true;
+          webRef.current?.injectJavaScript(`loadGlb("${b64}"); true;`);
+        }}
+        onMessage={(e) => {
+          const { type, msg } = JSON.parse(e.nativeEvent.data);
+          console.log(`[Viewer] ${type}: ${msg}`);
+        }}
+        onError={(e) => console.error("[Viewer] WebView error:", e.nativeEvent.description)}
+        onHttpError={(e) => console.error("[Viewer] HTTP error:", e.nativeEvent.statusCode)}
+      />
+      {BackButton}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#FFF' },
-    header: { flexDirection: 'row', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#EEE' },
-    backBtn: { marginRight: 15 },
-    headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#111' },
-    viewerContainer: { flex: 1, margin: 20, borderRadius: 20, overflow: 'hidden', backgroundColor: '#F4F7FB' },
-    webview: { flex: 1, backgroundColor: 'transparent' },
-    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    loadingText: { marginTop: 10, color: '#666', fontSize: 14, fontWeight: '600' },
-    footer: { padding: 20 },
-    exportButton: { backgroundColor: '#00A3FF', height: 55, borderRadius: 28, justifyContent: 'center', alignItems: 'center' },
-    exportButtonText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' }
+  container: { flex: 1, backgroundColor: "#111" },
+  center: { justifyContent: "center", alignItems: "center" },
+  webview: { flex: 1, backgroundColor: "#111" },
+  errorText: { color: "red", padding: 20, paddingTop: 100 },
+  backWrapper: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 10, paddingHorizontal: 20, paddingTop: 10 },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    justifyContent: "center",
+    alignItems: "center",
+    alignSelf: "flex-start",
+  },
 });

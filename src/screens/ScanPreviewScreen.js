@@ -1,111 +1,213 @@
+// screens/ScanPreviewScreen.js
 import React, { useState } from 'react';
-import { 
-    StyleSheet, Text, View, SafeAreaView, TouchableOpacity, 
-    Image, ActivityIndicator, Alert, Platform 
+import {
+    StyleSheet, Text, View, TouchableOpacity,
+    Image, ActivityIndicator, Alert, Platform, TextInput,
+    KeyboardAvoidingView, ScrollView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ModelService } from '../services/ModelService';
 
 export default function ScanPreviewScreen({ route, navigation }) {
     const { imageUri } = route.params;
     const [isLoading, setIsLoading] = useState(false);
     const [statusText, setStatusText] = useState('Review your cropped scan preview');
+    
+    const [generatedResult, setGeneratedResult] = useState(null);
+    const [modelName, setModelName] = useState('');
+    const [showNameInput, setShowNameInput] = useState(false);
 
     const handleConfirmOk = async () => {
         try {
             setIsLoading(true);
-            setStatusText('Uploading to Neural4D AI...');
+            console.log('[Scan] Generate start, imageUri:', imageUri);
 
-            // 1. Send image URL/URI to service to start 3D generation task
-            const modelUUID = await ModelService.uploadingModel(imageUri);
+            const result = await ModelService.generate3DModel(imageUri, setStatusText);
+            console.log('[Scan] Result:', result);
 
-            if (!modelUUID) {
-                throw new Error("Failed to start 3D generation task");
-            }
-
-            console.log("Neural4D Task Created UUID:", modelUUID);
-            setStatusText('Processing 3D model, please wait...');
-
-            // 2. Poll for the completed model status passing setStatusText callback
-            const result = await ModelService.convertingUpdatingModel(modelUUID, setStatusText);
-            
             setIsLoading(false);
 
-            if (result && result.format) {
-                navigation.replace('ModelViewerScreen', { 
-                    modelGlbUrl: result.format 
-                });
+            if (result?.localUri) {
+                setGeneratedResult(result);
+                setShowNameInput(true);
+                setStatusText('Model generated successfully! Enter a name.');
             } else {
-                Alert.alert("Error", "Timed out or failed to retrieve 3D model link.");
+                Alert.alert('Error', 'Model local storage mein save nahi hua.');
             }
-
         } catch (error) {
-            console.error("AI 3D Generation Error:", error);
+            console.error('[Scan] Error:', error?.message, error);
             setIsLoading(false);
-            Alert.alert("Error", "3D conversion failed. Please check your network and API key.");
+            setStatusText('Review your cropped scan preview');
+            Alert.alert('Generation Failed', error?.message || 'Unknown error');
+        }
+    };
+
+    const handleSaveAndNavigate = async () => {
+        if (!modelName.trim()) {
+            Alert.alert('Required', 'Please enter a name for your 3D model.');
+            return;
+        }
+
+        try {
+            console.log('[Scan] Saving to MongoDB with taskId:', generatedResult.taskId);
+            
+            // Yahan imageUri ki jagah generatedResult.taskId pass kiya hai taake backend par sahi data jaye
+            await ModelService.saveModelName(generatedResult.taskId, modelName.trim());
+            
+            console.log('[Scan] Successfully saved to backend!');
+            navigation.replace('ModelViewerScreen', { localUri: generatedResult.localUri });
+        } catch (e) {
+            console.error('Error saving name to backend:', e);
+            Alert.alert('Warning', 'Model local mein save ho gaya lekin backend par sync nahi ho saka.');
+            navigation.replace('ModelViewerScreen', { localUri: generatedResult.localUri });
         }
     };
 
     const handleCancel = () => {
-        navigation.goBack(); 
+        if (!isLoading) navigation.goBack();
     };
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={handleCancel}>
-                    <Ionicons name="arrow-back" size={22} color="#111" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Scan Preview</Text>
-                <View style={{ width: 40 }} />
-            </View>
+            <KeyboardAvoidingView 
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+                style={{ flex: 1 }}
+            >
+                <View style={styles.header}>
+                    <View style={styles.topRow}>
+                        <TouchableOpacity style={styles.backButton} onPress={handleCancel} disabled={isLoading}>
+                            <Ionicons name="arrow-back" size={22} color="#111" />
+                        </TouchableOpacity>
+                        <Text style={styles.headerTitle}>Scan Preview</Text>
+                        <View style={{ width: 40 }} />
+                    </View>
 
-            {/* Cropped Image Preview Container */}
-            <View style={styles.previewContainer}>
-                <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="contain" />
-            </View>
-
-            {/* Status / Instruction */}
-            <View style={styles.statusBox}>
-                <Text style={styles.statusText}>{statusText}</Text>
-            </View>
-
-            {/* Loading Overlay */}
-            {isLoading && (
-                <View style={styles.loadingOverlay}>
-                    <ActivityIndicator size="large" color="#00A3FF" />
-                    <Text style={styles.loadingText}>{statusText}</Text>
+                    <View style={styles.subRow}>
+                        <TouchableOpacity 
+                            style={styles.viewSavedBtn} 
+                            onPress={() => navigation.navigate('ModelListScreen')} 
+                            disabled={isLoading}
+                        >
+                            <Ionicons name="folder-open-outline" size={14} color="#00A3FF" style={{ marginRight: 4 }} />
+                            <Text style={styles.viewSavedText}>View Saved Models</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
-            )}
 
-            {/* Bottom Actions */}
-            <View style={styles.footer}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel} disabled={isLoading}>
-                    <Text style={styles.cancelBtnText}>Cancel / Retake</Text>
-                </TouchableOpacity>
+                <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+                    <View style={styles.previewContainer}>
+                        <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="contain" />
+                    </View>
 
-                <TouchableOpacity style={styles.okBtn} onPress={handleConfirmOk} disabled={isLoading}>
-                    <Ionicons name="checkmark" size={18} color="#FFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.okBtnText}>OK / Generate</Text>
-                </TouchableOpacity>
-            </View>
+                    <View style={styles.statusBox}>
+                        <Text style={styles.statusText}>{statusText}</Text>
+                    </View>
+                </ScrollView>
+
+                {isLoading && (
+                    <View style={styles.loadingOverlay}>
+                        <ActivityIndicator size="large" color="#00A3FF" />
+                        <Text style={styles.loadingText}>{statusText}</Text>
+                    </View>
+                )}
+
+                {/* Keyboard Avoiding Container for Name Input */}
+                {showNameInput && (
+                    <View style={styles.nameInputContainer}>
+                        <Text style={styles.inputLabel}>Name your 3D Model:</Text>
+                        <TextInput
+                            style={styles.textInput}
+                            placeholder="e.g., Coffee Mug, Table, Chair..."
+                            placeholderTextColor="#666"
+                            value={modelName}
+                            onChangeText={setModelName}
+                            autoFocus={true}
+                        />
+                        <TouchableOpacity style={styles.saveNameBtn} onPress={handleSaveAndNavigate}>
+                            <Text style={styles.saveNameBtnText}>Save Model</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                {!showNameInput && (
+                    <View style={styles.footer}>
+                        <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel} disabled={isLoading}>
+                            <Text style={styles.cancelBtnText}>Cancel</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.okBtn} onPress={handleConfirmOk} disabled={isLoading}>
+                            <Ionicons name="checkmark" size={18} color="#FFF" style={{ marginRight: 6 }} />
+                            <Text style={styles.okBtnText}>Generate</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#111' },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 10 },
-    backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center' },
-    headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#FFF' },
-    previewContainer: { flex: 1, margin: 20, backgroundColor: '#222', borderRadius: 16, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#333' },
+    header: { 
+        paddingHorizontal: 20, 
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: '#222'
+    },
+    topRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    backButton: { 
+        width: 40, 
+        height: 40, 
+        borderRadius: 20, 
+        backgroundColor: '#FFF', 
+        justifyContent: 'center', 
+        alignItems: 'center' 
+    },
+    headerTitle: { 
+        fontSize: 18, 
+        fontWeight: 'bold', 
+        color: '#FFF', 
+        textAlign: 'center',
+        flex: 1 
+    },
+    subRow: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        marginTop: 8
+    },
+    viewSavedBtn: { 
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12, 
+        paddingVertical: 6, 
+        backgroundColor: '#222', 
+        borderRadius: 14, 
+        borderWidth: 1, 
+        borderColor: '#444' 
+    },
+    viewSavedText: { 
+        color: '#00A3FF', 
+        fontSize: 13, 
+        fontWeight: '600' 
+    },
+    scrollContent: { flexGrow: 1, paddingBottom: 20 },
+    previewContainer: { flex: 1, margin: 20, height: 300, backgroundColor: '#222', borderRadius: 16, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#333' },
     previewImage: { width: '100%', height: '100%' },
     statusBox: { paddingHorizontal: 20, paddingBottom: 10, alignItems: 'center' },
     statusText: { color: '#AAA', fontSize: 14, textAlign: 'center' },
     loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', zIndex: 50 },
     loadingText: { color: '#FFF', fontSize: 16, fontWeight: 'bold', marginTop: 12, textAlign: 'center', paddingHorizontal: 20 },
-    footer: { flexDirection: 'row', justifyContent: 'space-space-between', padding: 20, paddingBottom: Platform.OS === 'ios' ? 20 : 15 },
+    nameInputContainer: { padding: 20, backgroundColor: '#1a1a1a', borderTopWidth: 1, borderTopColor: '#333' },
+    inputLabel: { color: '#FFF', fontSize: 14, fontWeight: '600', marginBottom: 8 },
+    textInput: { backgroundColor: '#222', borderWidth: 1, borderColor: '#444', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, color: '#FFF', fontSize: 15, marginBottom: 12 },
+    saveNameBtn: { backgroundColor: '#00A3FF', paddingVertical: 14, borderRadius: 25, alignItems: 'center' },
+    saveNameBtnText: { color: '#FFF', fontSize: 15, fontWeight: 'bold' },
+    footer: { flexDirection: 'row', justifyContent: 'space-between', padding: 20, paddingBottom: Platform.OS === 'ios' ? 20 : 15 },
     cancelBtn: { flex: 1, backgroundColor: '#333', paddingVertical: 16, borderRadius: 25, alignItems: 'center', marginRight: 10 },
     cancelBtnText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
     okBtn: { flex: 1, flexDirection: 'row', backgroundColor: '#00A3FF', paddingVertical: 16, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginLeft: 10 },

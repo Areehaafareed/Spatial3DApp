@@ -7,6 +7,7 @@ import OnboardingScreen from './src/screens/OnboardingScreen';
 import ScannerScreen from './src/screens/ScannnerScreen';
 import ModelViewerScreen from './src/screens/ModelViewerScreen';
 import ScanPreviewScreen from './src/screens/ScanPreviewScreen';
+import ModelListScreen from './src/screens/ModelListScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -19,6 +20,7 @@ export default function App() {
         <Stack.Screen name="Scanner" component={ScannerScreen} />
         <Stack.Screen name="ScanPreviewScreen" component={ScanPreviewScreen} options={{ headerShown: false }} />
         <Stack.Screen name="ModelViewerScreen" component={ModelViewerScreen} />
+        <Stack.Screen name="ModelListScreen" component={ModelListScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
