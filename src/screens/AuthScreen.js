@@ -1,42 +1,116 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  StyleSheet, Text, View, TextInput, TouchableOpacity, 
-  SafeAreaView, KeyboardAvoidingView, Platform, ScrollView , Alert
+  StyleSheet, Text, View, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView , Alert, ActivityIndicator
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { AuthService } from '../services/AuthService';
+
+const passwordStrength = (pw) => {
+  if (!pw) return 0;
+  let score = 0;
+  if (pw.length >= 6) score++;
+  if (pw.length >= 10) score++;
+  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
+  if (/[0-9]/.test(pw) || /[^A-Za-z0-9]/.test(pw)) score++;
+  return Math.min(score, 4);
+};
+
+const STRENGTH_LABELS = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+const STRENGTH_COLORS = ['#E0E0E0', '#FF3B30', '#FF9500', '#FFCC00', '#34C759'];
 
 export default function AuthScreen({ navigation }) {
   const [isSignIn, setIsSignIn] = useState(true); 
   const [showPassword, setShowPassword] = useState(false);
 
-  const [email , setEmail] = useState('areeha@gmail.com');
-  const [password , setPassword] = useState('123456');
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
-  
-  const handleLogin = () => {
-    const checkEmail = email.trim().toLowerCase();
-    const checkPassword = password.trim();
+  const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
 
-    if (checkEmail === 'areeha@gmail.com' && checkPassword === '123456') {
-        navigation.replace('Onboarding'); 
-    } else {
-      Alert.alert('Error', 'Invalid Credentials!');
+  // Agar pehle se login hai to seedha app me le jao
+  useEffect(() => {
+    (async () => {
+      try {
+        if (await AuthService.hasSession()) {
+          navigation.replace('Onboarding');
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        setCheckingSession(false);
+      }
+    })();
+  }, []);
+
+  const handleLogin = async () => {
+    if (!email.trim() || !password) {
+      return Alert.alert('Missing details', 'Enter your email and password.');
+    }
+    try {
+      setLoading(true);
+      await AuthService.login(email, password);
+      navigation.replace('Onboarding');
+    } catch (err) {
+      Alert.alert('Sign in failed', err.message || 'Invalid Credentials!');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleSignup = () => {
-    Alert.alert('Success', 'Account created successfully!');
-    navigation.replace('Onboarding'); 
+  const handleSignup = async () => {
+    if (!fullName.trim()) return Alert.alert('Missing name', 'Please enter your full name.');
+    if (!email.trim()) return Alert.alert('Missing email', 'Please enter your email address.');
+    if (password.length < 6) return Alert.alert('Weak password', 'Password must be at least 6 characters.');
+    if (password !== confirmPassword) return Alert.alert('Password mismatch', 'Passwords do not match.');
+    if (!agreedToTerms) return Alert.alert('Terms required', 'Please agree to the Terms of Service.');
+
+    try {
+      setLoading(true);
+      await AuthService.signup(fullName, email, password);
+      Alert.alert('Welcome to PixiMesh 🎉', 'Your account was created successfully!', [
+        { text: 'Continue', onPress: () => navigation.replace('Onboarding') },
+      ]);
+    } catch (err) {
+      const message = err.status === 409
+        ? 'An account with this email already exists. Try signing in instead.'
+        : err.message || 'Could not create your account.';
+      Alert.alert('Sign up failed', message, [
+        { text: 'Sign In Instead', onPress: () => setIsSignIn(true) },
+        { text: 'OK' },
+      ]);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  if (checkingSession) {
+    return (
+      <SafeAreaView style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color="#00A3FF" />
+      </SafeAreaView>
+    );
+  }
+
+  const strength = passwordStrength(password);
 
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[styles.scrollContainer, { paddingBottom: 60 }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets={true}
+        >
           
           {/* Header Section */}
           <View style={styles.headerContainer}>
@@ -44,9 +118,9 @@ export default function AuthScreen({ navigation }) {
               <Ionicons name="cube-outline" size={28} color="#00A3FF" />
               <View style={styles.logoDot} />
             </View>
-            <Text style={styles.logoText}>Spatial3D</Text>
+            <Text style={styles.logoText}>PixiMesh</Text>
             <Text style={styles.subtitleText}>
-              {isSignIn ? "Welcome to 3D spatial scanning made simple" : "Create your account to start 3D scanning"}
+              {isSignIn ? "Welcome to 3D scanning made simple" : "Create your account to start 3D scanning"}
             </Text>
           </View>
 
@@ -73,7 +147,14 @@ export default function AuthScreen({ navigation }) {
                 <Text style={styles.inputLabel}>Full Name</Text>
                 <View style={styles.inputWrapper}>
                   <Ionicons name="person-outline" size={20} color="#555" style={styles.inputIcon} />
-                  <TextInput style={styles.input} placeholder="e.g. Alex Morgan" placeholderTextColor="#999" />
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="e.g. Areeha Fareed" 
+                    placeholderTextColor="#999"
+                    value={fullName}
+                    onChangeText={setFullName}
+                    autoCapitalize="words"
+                  />
                 </View>
               </>
             )}
@@ -81,7 +162,15 @@ export default function AuthScreen({ navigation }) {
             <Text style={styles.inputLabel}>Email address</Text>
             <View style={styles.inputWrapper}>
               <MaterialCommunityIcons name="email-outline" size={20} color="#555" style={styles.inputIcon} />
-              <TextInput style={styles.input} placeholder="designer@spatial.studio" placeholderTextColor="#999" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
+              <TextInput 
+                style={styles.input} 
+                placeholder="designer@spatial.studio" 
+                placeholderTextColor="#999" 
+                keyboardType="email-address" 
+                autoCapitalize="none" 
+                value={email} 
+                onChangeText={setEmail} 
+              />
             </View>
 
             <Text style={styles.inputLabel}>Password</Text>
@@ -104,13 +193,17 @@ export default function AuthScreen({ navigation }) {
               <>
                 <View style={styles.strengthContainer}>
                   <Text style={styles.strengthText}>Security Strength</Text>
-                  <Text style={styles.strengthStrong}>Strong</Text>
+                  <Text style={[styles.strengthValue, { color: STRENGTH_COLORS[strength] }]}>
+                    {STRENGTH_LABELS[strength] || '—'}
+                  </Text>
                 </View>
                 <View style={styles.strengthBars}>
-                  <View style={[styles.bar, styles.activeBar]} />
-                  <View style={[styles.bar, styles.activeBar]} />
-                  <View style={[styles.bar, styles.activeBar]} />
-                  <View style={[styles.bar, styles.activeBar]} />
+                  {[1, 2, 3, 4].map((i) => (
+                    <View
+                      key={i}
+                      style={[styles.bar, strength >= i && { backgroundColor: STRENGTH_COLORS[strength] }]}
+                    />
+                  ))}
                 </View>
 
                 <Text style={styles.inputLabel}>Confirm Password</Text>
@@ -124,27 +217,49 @@ export default function AuthScreen({ navigation }) {
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
                   />
-                  <Ionicons name="checkmark-circle-outline" size={20} color="#00A3FF" style={styles.inputIconRight} />
+                  {confirmPassword.length > 0 && (
+                    <Ionicons
+                      name={confirmPassword === password ? "checkmark-circle" : "close-circle-outline"}
+                      size={20}
+                      color={confirmPassword === password ? "#34C759" : "#FF3B30"}
+                      style={styles.inputIconRight}
+                    />
+                  )}
                 </View>
                 
-                <View style={styles.checkboxContainer}>
-                  <Ionicons name="checkbox" size={20} color="#00A3FF" />
+                <TouchableOpacity style={styles.checkboxContainer} onPress={() => setAgreedToTerms(!agreedToTerms)}>
+                  <Ionicons name={agreedToTerms ? "checkbox" : "square-outline"} size={20} color={agreedToTerms ? "#00A3FF" : "#999"} />
                   <Text style={styles.checkboxText}>I agree to the <Text style={styles.linkTextDark}>Terms of Service</Text> & <Text style={styles.linkTextDark}>Privacy Policy</Text></Text>
-                </View>
+                </TouchableOpacity>
               </>
             )}
 
             {isSignIn && (
-              <TouchableOpacity>
+              <TouchableOpacity
+                onPress={() =>
+                  Alert.alert(
+                    'Reset Password',
+                    'Please sign in with your current password and update it anytime from Profile → Account & Security → Password.'
+                  )
+                }
+              >
                 <Text style={styles.forgotPassword}>Forgot password?</Text>
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity style={styles.primaryButton}>
-              <Text style={styles.primaryButtonText}
-               onPress={isSignIn ? handleLogin : handleSignup}>
-                {isSignIn ? "Login" : "Create Account"}
-              </Text>
+            <TouchableOpacity 
+              style={[styles.primaryButton, loading && { opacity: 0.7 }]} 
+              onPress={isSignIn ? handleLogin : handleSignup}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <Text style={styles.primaryButtonText}>
+                  {isSignIn ? "Login" : "Create Account"}
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -156,11 +271,19 @@ export default function AuthScreen({ navigation }) {
           </View>
 
           <View style={styles.socialContainer}>
-            <TouchableOpacity style={styles.socialButton}>
+            <TouchableOpacity
+              style={styles.socialButton}
+              activeOpacity={0.85}
+              onPress={() => Alert.alert('Apple Sign In', 'Please use email and password sign in for now.')}
+            >
               <Ionicons name="logo-apple" size={20} color="#000" />
               <Text style={styles.socialText}>Apple</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.socialButton}>
+            <TouchableOpacity
+              style={styles.socialButton}
+              activeOpacity={0.85}
+              onPress={() => Alert.alert('Google Sign In', 'Please use email and password sign in for now.')}
+            >
               <Ionicons name="logo-google" size={20} color="#DB4437" />
               <Text style={styles.socialText}>Google</Text>
             </TouchableOpacity>
@@ -179,7 +302,7 @@ export default function AuthScreen({ navigation }) {
 
           <View style={styles.versionPill}>
             <View style={styles.versionDot} />
-            <Text style={styles.versionText}>LiDAR & Photogrammetry Engine v3.4</Text>
+            <Text style={styles.versionText}>AI Image-to-3D Engine v1.0</Text>
           </View>
 
         </ScrollView>
@@ -190,6 +313,7 @@ export default function AuthScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFBFF' },
+  center: { justifyContent: 'center', alignItems: 'center' },
   scrollContainer: { padding: 24, alignItems: 'center', flexGrow: 1 },
   headerContainer: { alignItems: 'center', marginTop: 40, marginBottom: 20 },
   logoCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#F0F5FF', justifyContent: 'center', alignItems: 'center', marginBottom: 10, borderWidth: 1, borderColor: '#E5EFFF' },
@@ -209,10 +333,9 @@ const styles = StyleSheet.create({
   input: { flex: 1, fontSize: 14, color: '#333' },
   strengthContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16, marginBottom: 8 },
   strengthText: { fontSize: 12, color: '#111', fontWeight: '600' },
-  strengthStrong: { fontSize: 12, color: '#00A3FF', fontWeight: '600' },
+  strengthValue: { fontSize: 12, fontWeight: '600' },
   strengthBars: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   bar: { height: 4, flex: 1, marginHorizontal: 2, borderRadius: 2, backgroundColor: '#E0E0E0' },
-  activeBar: { backgroundColor: '#00A3FF' },
   checkboxContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 16, marginBottom: 16 },
   checkboxText: { fontSize: 12, color: '#666', marginLeft: 8, flex: 1 },
   forgotPassword: { color: '#00A3FF', fontSize: 12, fontWeight: '600', textAlign: 'right', marginTop: 16, marginBottom: 24 },

@@ -123,13 +123,7 @@ export default function ScannerScreen({ navigation }) {
                     </TouchableOpacity>
 
                     <View style={styles.rightButtons}>
-                        {/* Saved Models List Button */}
-                        <TouchableOpacity 
-                            style={[styles.iconButton, { marginRight: 8 }]} 
-                            onPress={() => navigation.navigate('ModelListScreen')}
-                        >
-                            <Ionicons name="folder-open-outline" size={20} color="#111" />
-                        </TouchableOpacity>
+    
 
                         <TouchableOpacity 
                             style={[styles.iconButton, isGridVisible && styles.activeGridBtn]} 

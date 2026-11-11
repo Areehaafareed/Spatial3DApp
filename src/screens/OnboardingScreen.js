@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   StyleSheet, Text, View, SafeAreaView, TouchableOpacity, 
   Platform, Animated , Alert
@@ -9,8 +9,8 @@ import { Camera } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library';
 
 export default function OnboardingScreen({ navigation }) {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const [fadeAnim] = useState(() => new Animated.Value(0));
+  const [scaleAnim] = useState(() => new Animated.Value(0.8));
 
   useEffect(() => {
     Animated.parallel([
@@ -43,7 +43,7 @@ const handleAllowAccess = async () => {
       // Check different conditions for clarity
       if (cameraStatus.status === 'granted' && mediaLibraryStatus.status === 'granted') {
         console.log("Both permissions granted! (Camera + Storage)");
-        navigation.replace('Scanner');
+        navigation.replace('MainTabs');
       } 
       else if (cameraStatus.status === 'granted' && mediaLibraryStatus.status !== 'granted') {
         Alert.alert(
@@ -74,7 +74,7 @@ const handleAllowAccess = async () => {
             <View style={styles.logoCircleSm}>
               <Ionicons name="cube-outline" size={20} color="#00A3FF" />
             </View>
-            <Text style={styles.logoTextSm}>Spatial3D</Text>
+            <Text style={styles.logoTextSm}>PixiMesh</Text>
           </View>
         </View>
       </SafeAreaView>
@@ -94,7 +94,7 @@ const handleAllowAccess = async () => {
 
           <Text style={styles.title}>Allow Camera & Storage Access</Text>
           <Text style={styles.description}>
-            Spatial3D needs access to your LiDAR optical sensor and local storage to scan real objects in 3D and save meshes to your device.
+            PixiMesh needs access to your camera and local storage to capture photos and convert them into 3D models saved on your device.
           </Text>
 
           <View style={styles.featureBox}>
@@ -102,8 +102,8 @@ const handleAllowAccess = async () => {
               <Ionicons name="camera-outline" size={20} color="#0052cc" />
             </View>
             <View style={styles.featureTextContainer}>
-              <Text style={styles.featureTitle}>Camera & LiDAR Sensor</Text>
-              <Text style={styles.featureSubtitle}>3D depth scanning & photogrammetry</Text>
+              <Text style={styles.featureTitle}>Camera</Text>
+              <Text style={styles.featureSubtitle}>Capture photos to generate 3D models</Text>
             </View>
           </View>
 
@@ -123,7 +123,7 @@ const handleAllowAccess = async () => {
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.secondaryButton} onPress={() => console.log("Declined")}>
-            <Text style={styles.secondaryButtonText}>Don't Allow</Text>
+            <Text style={styles.secondaryButtonText}>Don&apos;t Allow</Text>
           </TouchableOpacity>
 
         </Animated.View>

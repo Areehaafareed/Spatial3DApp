@@ -1,24 +1,44 @@
 // screens/ModelListScreen.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     StyleSheet, Text, View, FlatList, TouchableOpacity,
-    ActivityIndicator, SafeAreaView, RefreshControl
+    ActivityIndicator, RefreshControl
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import * as FileSystem from 'expo-file-system/legacy'; // <-- Legacy import for Expo SDK 54
+import * as FileSystem from 'expo-file-system/legacy'; // Legacy import for Expo SDK 54
 import { ModelService } from '../services/ModelService';
+import { AuthService } from '../services/AuthService';
 
 const MODELS_DIR = FileSystem.documentDirectory + 'models/';
+
+const COLORS = {
+    bg: '#F6F7FB',
+    card: '#FFFFFF',
+    border: '#E3E6EE',
+    text: '#1B1F2A',
+    muted: '#6B7280',
+    primary: '#1AA1E6',
+    primaryDark: '#0B5C8C',
+    primarySoft: '#E4F1FB',
+};
+
+const formatSize = (kb) => (kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`);
+
+const formatDate = (ts) => {
+    if (!ts) return '';
+    const d = new Date(ts * 1000);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
 
 export default function ModelListScreen({ navigation }) {
     const [models, setModels] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    const loadModels = async () => {
+    const loadModels = useCallback(async () => {
         try {
-            setIsLoading(true);
-
             // 1) MongoDB backend se saved models fetch karein
             const backendModels = await ModelService.fetchModelsFromBackend();
             const backendNames = {};
@@ -30,8 +50,6 @@ export default function ModelListScreen({ navigation }) {
             const dirInfo = await FileSystem.getInfoAsync(MODELS_DIR);
             if (!dirInfo.exists) {
                 setModels([]);
-                setIsLoading(false);
-                setRefreshing(false);
                 return;
             }
 
@@ -43,12 +61,12 @@ export default function ModelListScreen({ navigation }) {
                     const taskId = file.replace('.glb', '');
                     const filePath = MODELS_DIR + file;
                     const info = await FileSystem.getInfoAsync(filePath);
-                    
+
                     glbFiles.push({
                         id: file,
                         taskId: taskId,
                         name: backendNames[taskId] || `Model (${taskId.substring(0, 6)})`,
-                        localUri: filePath, // Yeh local file path ModelViewerScreen ke liye zaroori hai
+                        localUri: filePath, // ModelViewerScreen ke liye zaroori
                         size: Math.round((info.size || 0) / 1024),
                         modificationTime: info.modificationTime || 0
                     });
@@ -59,15 +77,25 @@ export default function ModelListScreen({ navigation }) {
             setModels(glbFiles);
         } catch (error) {
             console.error('[ModelList] Error loading models:', error);
+            if (error?.status === 401) {
+                // Session expired — wapas sign-in par bhejo
+                await AuthService.logout();
+                navigation.replace('Auth');
+                return;
+            }
         } finally {
             setIsLoading(false);
             setRefreshing(false);
         }
-    };
+    }, [navigation]);
 
-    useEffect(() => {
-        loadModels();
-    }, []);
+    // Tab mein screen mounted rehti hai, isliye har baar focus par reload hoga
+    // (naya scan save karke Library tab par aane par list update ho jayegi)
+    useFocusEffect(
+        useCallback(() => {
+            loadModels();
+        }, [loadModels])
+    );
 
     const onRefresh = () => {
         setRefreshing(true);
@@ -75,48 +103,65 @@ export default function ModelListScreen({ navigation }) {
     };
 
     const renderItem = ({ item }) => (
-        <TouchableOpacity 
+        <TouchableOpacity
             style={styles.modelCard}
+            activeOpacity={0.7}
             onPress={() => {
-                // ModelViewerScreen ko localUri, taskId aur modelName pass karna
-                navigation.navigate('ModelViewerScreen', { 
+                navigation.navigate('ModelViewerScreen', {
                     localUri: item.localUri,
                     taskId: item.taskId,
-                    modelName: item.name 
+                    modelName: item.name
                 });
             }}
         >
             <View style={styles.iconContainer}>
-                <Ionicons name="cube" size={24} color="#00A3FF" />
+                <Ionicons name="cube" size={26} color={COLORS.primary} />
             </View>
             <View style={styles.modelInfo}>
-                <Text style={styles.modelTitle}>{item.name}</Text>
-                <Text style={styles.modelDate}>
-                    Size: {item.size} KB
-                </Text>
+                <Text style={styles.modelTitle} numberOfLines={1}>{item.name}</Text>
+                <View style={styles.metaRow}>
+                    <Ionicons name="calendar-outline" size={11} color={COLORS.muted} />
+                    <Text style={styles.modelMeta}>{formatDate(item.modificationTime)}</Text>
+                    <View style={styles.metaDot} />
+                    <Ionicons name="document-outline" size={11} color={COLORS.muted} />
+                    <Text style={styles.modelMeta}>{formatSize(item.size)}</Text>
+                </View>
             </View>
-            <Ionicons name="chevron-forward" size={20} color="#666" />
+            <View style={styles.arrowWrap}>
+                <Ionicons name="chevron-forward" size={18} color={COLORS.primary} />
+            </View>
         </TouchableOpacity>
     );
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={styles.container} edges={['top']}>
             <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-                    <Ionicons name="arrow-back" size={22} color="#111" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Saved Models</Text>
-                <View style={{ width: 40 }} />
+                <View style={styles.brand}>
+                    <Ionicons name="cube-outline" size={22} color={COLORS.primary} />
+                    <Text style={styles.headerTitle}>Saved Models</Text>
+                </View>
+                <Text style={styles.count}>{models.length} {models.length === 1 ? 'model' : 'models'}</Text>
             </View>
 
             {isLoading && !refreshing ? (
                 <View style={styles.centerContainer}>
-                    <ActivityIndicator size="large" color="#00A3FF" />
+                    <ActivityIndicator size="large" color={COLORS.primary} />
                 </View>
             ) : models.length === 0 ? (
                 <View style={styles.centerContainer}>
-                    <Ionicons name="folder-open-outline" size={50} color="#555" />
-                    <Text style={styles.emptyText}>No models found.</Text>
+                    <View style={styles.emptyIconWrap}>
+                        <Ionicons name="cube-outline" size={44} color={COLORS.primary} />
+                    </View>
+                    <Text style={styles.emptyTitle}>No 3D Models Yet</Text>
+                    <Text style={styles.emptyText}>Snap a photo of any object to turn it into an interactive 3D model.</Text>
+                    <TouchableOpacity
+                        style={styles.scanBtn}
+                        activeOpacity={0.85}
+                        onPress={() => navigation.navigate('Capture')}
+                    >
+                        <Ionicons name="camera-outline" size={18} color="#fff" />
+                        <Text style={styles.scanBtnText}>Start Scanning</Text>
+                    </TouchableOpacity>
                 </View>
             ) : (
                 <FlatList
@@ -125,7 +170,7 @@ export default function ModelListScreen({ navigation }) {
                     renderItem={renderItem}
                     contentContainerStyle={styles.listContainer}
                     refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00A3FF" />
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
                     }
                 />
             )}
@@ -134,54 +179,76 @@ export default function ModelListScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#111' },
-    header: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        justifyContent: 'space-between', 
-        paddingHorizontal: 20, 
-        paddingVertical: 10,
-        borderBottomWidth: 1,
-        borderBottomColor: '#222'
+    container: { flex: 1, backgroundColor: COLORS.bg },
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        paddingVertical: 14,
     },
-    backButton: { 
-        width: 40, 
-        height: 40, 
-        borderRadius: 20, 
-        backgroundColor: '#FFF', 
-        justifyContent: 'center', 
-        alignItems: 'center' 
+    brand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    headerTitle: { fontSize: 20, fontWeight: '700', color: COLORS.text },
+    count: { fontSize: 13, color: COLORS.muted },
+    centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
+    emptyIconWrap: {
+        width: 84,
+        height: 84,
+        borderRadius: 42,
+        backgroundColor: COLORS.primarySoft,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
     },
-    headerTitle: { 
-        fontSize: 18, 
-        fontWeight: 'bold', 
-        color: '#FFF', 
-        textAlign: 'center',
-        flex: 1 
+    emptyTitle: { fontSize: 18, fontWeight: '700', color: COLORS.text, marginBottom: 6 },
+    emptyText: { color: COLORS.muted, fontSize: 14, textAlign: 'center', lineHeight: 20 },
+    scanBtn: {
+        marginTop: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: COLORS.primary,
+        paddingHorizontal: 22,
+        paddingVertical: 12,
+        borderRadius: 24,
     },
-    centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    emptyText: { color: '#888', fontSize: 15, marginTop: 10 },
-    listContainer: { padding: 20 },
-    modelCard: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        backgroundColor: '#1e1e1e', 
-        padding: 16, 
-        borderRadius: 14, 
-        marginBottom: 12, 
-        borderWidth: 1, 
-        borderColor: '#333' 
+    scanBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+    listContainer: { paddingHorizontal: 16, paddingBottom: 24 },
+    modelCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: COLORS.card,
+        padding: 16,
+        borderRadius: 16,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        shadowColor: '#000',
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 2,
     },
-    iconContainer: { 
-        width: 45, 
-        height: 45, 
-        borderRadius: 10, 
-        backgroundColor: '#2a2a2a', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        marginRight: 14 
+    iconContainer: {
+        width: 52,
+        height: 52,
+        borderRadius: 14,
+        backgroundColor: COLORS.primarySoft,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 14,
     },
     modelInfo: { flex: 1 },
-    modelTitle: { color: '#FFF', fontSize: 16, fontWeight: '600', marginBottom: 4 },
-    modelDate: { color: '#888', fontSize: 12 }
+    modelTitle: { color: COLORS.text, fontSize: 16, fontWeight: '600', marginBottom: 6 },
+    metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    modelMeta: { color: COLORS.muted, fontSize: 11 },
+    metaDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: COLORS.muted, marginHorizontal: 2 },
+    arrowWrap: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: COLORS.primarySoft,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
 });

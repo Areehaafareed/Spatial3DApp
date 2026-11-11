@@ -1,11 +1,10 @@
 // services/ModelService.js
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImageManipulator from "expo-image-manipulator";
+import { apiFetch } from "./Api";
 
 const BASE_URL = "https://api.meshy.ai/openapi/v1/image-to-3d";
 const API_KEY = process.env.EXPO_PUBLIC_MESHY_KEY;
-
-const BACKEND_URL = 'http://192.168.1.12:5000/api';
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 200;
@@ -174,40 +173,34 @@ export class ModelService {
     }
 
 
-    // 1. Model ka name backend (MongoDB) aur local storage dono par save karne ke liye
+    // 1. Model ka name backend (MongoDB) me save karne ke liye.
+    //    Local .glb ka size bhi report karta hai taake profile ka storage
+    //    stat backend se serve ho sake.
     static async saveModelName(taskId, customName) {
         try {
-            // Local storage index update karein (agar aapka pehle se hai)
-            console.log('[ModelService] Saving name locally & to backend...');
+            console.log('[ModelService] Saving name to backend...');
 
-            // MongoDB backend par POST request bhejna
-            const response = await fetch(`${BACKEND_URL}/models`, {
+            const localUri = glbPath(taskId);
+            const info = await FileSystem.getInfoAsync(localUri).catch(() => null);
+            const sizeKb = info?.exists ? Math.round((info.size || 0) / 1024) : 0;
+
+            return await apiFetch('/models', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    taskId: taskId,
-                    name: customName
-                })
+                body: { taskId, name: customName, sizeKb },
             });
-
-            const result = await response.json();
-            console.log('[ModelService] Backend save response:', result);
-            return result;
         } catch (error) {
             console.error('[ModelService] Error saving to backend:', error);
             throw error;
         }
     }
 
-    // 2. MongoDB backend se saare saved models fetch karne ke liye
+    // 2. Signed-in user ke saved models backend (MongoDB) se fetch karne ke liye
     static async fetchModelsFromBackend() {
         try {
-            const response = await fetch(`${BACKEND_URL}/models`);
-            const models = await response.json();
-            return models; // [{ taskId, name, createdAt }, ...]
+            return await apiFetch('/models'); // [{ taskId, name, createdAt, sizeKb }, ...]
         } catch (error) {
+            // Session expire ho gaya hai — screen ko handle karne do
+            if (error.status === 401) throw error;
             console.error('[ModelService] Error fetching from backend:', error);
             return [];
         }

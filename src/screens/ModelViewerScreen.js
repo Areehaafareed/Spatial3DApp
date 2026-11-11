@@ -31,7 +31,7 @@ window.onerror = function(m){ send("error","JS error: "+m); };
 </body></html>`;
 
 export default function ModelViewerScreen({ route, navigation }) {
-  const { localUri } = route.params || {};
+  const { localUri, modelName } = route.params || {};
   const webRef = useRef(null);
   const injected = useRef(false);
   const [b64, setB64] = useState(null);
@@ -61,9 +61,18 @@ export default function ModelViewerScreen({ route, navigation }) {
   // Back button har state (error / loading / viewer) mein dikhega
   const BackButton = (
     <SafeAreaView style={styles.backWrapper} edges={["top"]} pointerEvents="box-none">
-      <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-        <Ionicons name="arrow-back" size={22} color="#111" />
-      </TouchableOpacity>
+      <View style={styles.topRow}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+          <Ionicons name="arrow-back" size={22} color="#111" />
+        </TouchableOpacity>
+        {!!modelName && (
+          <View style={styles.titlePill}>
+            <Ionicons name="cube-outline" size={14} color="#00A3FF" />
+            <Text style={styles.titleText} numberOfLines={1}>{modelName}</Text>
+          </View>
+        )}
+        <View style={{ width: 40 }} />
+      </View>
     </SafeAreaView>
   );
 
@@ -116,6 +125,18 @@ const styles = StyleSheet.create({
   webview: { flex: 1, backgroundColor: "#111" },
   errorText: { color: "red", padding: 20, paddingTop: 100 },
   backWrapper: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 10, paddingHorizontal: 20, paddingTop: 10 },
+  topRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  titlePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    maxWidth: "60%",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  titleText: { fontSize: 13, fontWeight: "700", color: "#111" },
   backButton: {
     width: 40,
     height: 40,
@@ -123,6 +144,5 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.9)",
     justifyContent: "center",
     alignItems: "center",
-    alignSelf: "flex-start",
   },
 });

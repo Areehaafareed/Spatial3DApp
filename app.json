@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Spatial3DAuth",
-    "slug": "Spatial3DAuth",
+    "name": "PixiMesh",
+    "slug": "PixiMesh",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -15,13 +15,30 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "package": "com.reeha.PixiMesh"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-sharing"
-    ]
+      "expo-camera",
+      "expo-media-library",
+      "expo-sharing",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.piximesh",
+          "enableGooglePay": true
+        }
+      ],
+      "expo-status-bar"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "bc16f516-b048-4648-8850-ade2bb556d5a"
+      }
+    },
+    "owner": "reeha"
   }
 }
